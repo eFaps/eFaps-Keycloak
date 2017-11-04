@@ -17,19 +17,25 @@
 
 package org.efaps.ui;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import javax.servlet.http.HttpSession;
 
+import org.efaps.admin.EFapsSystemConfiguration;
+import org.efaps.admin.user.JAASSystem;
 import org.efaps.admin.user.Person;
+import org.efaps.admin.user.Person.AttrName;
+import org.efaps.admin.user.Role;
 import org.efaps.api.ui.ILoginProvider;
 import org.efaps.db.Context;
 import org.efaps.util.EFapsException;
 import org.efaps.util.UUIDUtil;
 import org.keycloak.adapters.servlet.OIDCFilterSessionStore.SerializableKeycloakAccount;
 import org.keycloak.adapters.spi.KeycloakAccount;
-import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.IDToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +46,15 @@ import org.slf4j.LoggerFactory;
 public class KeycloakLoginProvider
     implements ILoginProvider
 {
+
+    /** The rolekey. */
+    public static final String ROLEKEY = "eFapsRoles";
+
+    /** The rolekey. */
+    private static final String PERMITROLEUPDATE = "org.efaps.kernel.sso.PermitRoleUpdate";
+
+    /** The rolekey. */
+    private static final String PERMITATTRIBUTEUPDATE = "org.efaps.kernel.sso.PermitAttributeUpdate";
 
     /**
      * Logger for this class.
@@ -62,18 +77,12 @@ public class KeycloakLoginProvider
                 }
                 boolean ok = false;
                 final String userName = account.getPrincipal().getName();
-                final IDToken token = account.getKeycloakSecurityContext().getIdToken();
-                final AccessToken atoken = account.getKeycloakSecurityContext().getToken();
-
-                final Map<String, Object> otherClaims = token.getOtherClaims();
-
                 try {
+                    final IDToken token = account.getKeycloakSecurityContext().getIdToken();
+                    syncAttributes(userName, token);
+                    syncRoles(userName, token);
                     Person.reset(userName);
-                    if (UUIDUtil.isUUID(userName)) {
-                        ok = Person.get(UUID.fromString(userName)) != null;
-                    } else {
-                        ok = Person.get(userName) != null;
-                    }
+                    ok = getPerson(userName) != null;
                 } finally {
                     if (ok && Context.isTMActive()) {
                         Context.commit();
@@ -94,5 +103,91 @@ public class KeycloakLoginProvider
             }
         }
         return ret;
+    }
+
+    /**
+     * Gets the person.
+     *
+     * @param _userName the user name
+     * @return the person
+     * @throws EFapsException the e faps exception
+     */
+    private Person getPerson(final String _userName)
+        throws EFapsException
+    {
+        final Person person;
+        if (UUIDUtil.isUUID(_userName)) {
+            person = Person.get(UUID.fromString(_userName));
+        } else {
+            person = Person.get(_userName);
+        }
+        return person;
+    }
+
+    /**
+     * Sync roles.
+     *
+     * @param _userName the user name
+     * @param _token the token
+     * @throws EFapsException the e faps exception
+     */
+    private void syncRoles(final String _userName,
+                           final IDToken _token)
+        throws EFapsException
+    {
+        if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITROLEUPDATE)) {
+            final Map<String, Object> otherClaims = _token.getOtherClaims();
+            if (otherClaims.containsKey(ROLEKEY)) {
+                @SuppressWarnings("unchecked")
+                final List<String> claims = (List<String>) otherClaims.get(ROLEKEY);
+                final Person person = getPerson(_userName);
+                if (person != null) {
+                    final Set<Role> roles = new HashSet<>();
+                    for (final String roleStr : claims) {
+                        final Role role;
+                        if (UUIDUtil.isUUID(roleStr)) {
+                            role = Role.get(UUID.fromString(roleStr));
+                        } else {
+                            role = Role.get(roleStr);
+                        }
+                        if (role != null) {
+                            roles.add(role);
+                        }
+                    }
+                    final JAASSystem jaasSystem = JAASSystem.getJAASSystem("eFaps");
+                    person.setRoles(jaasSystem, roles);
+                }
+            }
+        }
+    }
+
+    /**
+     * Sync attributes.
+     *
+     * @param _userName the user name
+     * @param _token the token
+     * @throws EFapsException the e faps exception
+     */
+    private void syncAttributes(final String _userName,
+                                final IDToken _token)
+        throws EFapsException
+    {
+        if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITATTRIBUTEUPDATE)) {
+            final Person person = getPerson(_userName);
+            if (person != null) {
+                boolean update = false;
+                if (!person.getFirstName().equals(_token.getGivenName())) {
+                    person.updateAttrValue(AttrName.FIRSTNAME, _token.getGivenName());
+                    update = true;
+                }
+                if (!person.getLastName().equals(_token.getFamilyName())) {
+                    person.updateAttrValue(AttrName.LASTNAME, _token.getFamilyName());
+                    update = true;
+                }
+                if (update) {
+                    person.commitAttrValuesInDB();
+                }
+            }
+        }
     }
 }
