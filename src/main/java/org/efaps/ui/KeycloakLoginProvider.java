@@ -29,6 +29,7 @@ import javax.servlet.http.HttpSession;
 
 import org.apache.commons.lang3.StringUtils;
 import org.efaps.admin.EFapsSystemConfiguration;
+import org.efaps.admin.user.Company;
 import org.efaps.admin.user.JAASSystem;
 import org.efaps.admin.user.Person;
 import org.efaps.admin.user.Person.AttrName;
@@ -65,8 +66,14 @@ public class KeycloakLoginProvider
     /** The Constant TZKEY. */
     public static final String TZKEY = "eFapsTimeZone";
 
+    /** The Constant COMPANIESKEY. */
+    public static final String COMPANIESKEY = "eFapsCompanies";
+
     /** The Constant PERMITROLEUPDATE. */
     private static final String PERMITROLEUPDATE = "org.efaps.kernel.sso.PermitRoleUpdate";
+
+    /** The Constant PERMITCOMPANYUPDATE. */
+    private static final String PERMITCOMPANYUPDATE = "org.efaps.kernel.sso.PermitCompanyUpdate";
 
     /** The Constant PERMITATTRIBUTEUPDATE. */
     private static final String PERMITATTRIBUTEUPDATE = "org.efaps.kernel.sso.PermitAttributeUpdate";
@@ -100,6 +107,7 @@ public class KeycloakLoginProvider
                     if (validatePerson(userName, token)) {
                         syncAttributes(userName, token);
                         syncRoles(userName, token);
+                        syncCompanies(userName, token);
                         Person.reset(userName);
                         ok = getPerson(userName) != null;
                     }
@@ -202,6 +210,41 @@ public class KeycloakLoginProvider
                     }
                     final JAASSystem jaasSystem = JAASSystem.getJAASSystem("eFaps");
                     person.setRoles(jaasSystem, roles);
+                }
+            }
+        }
+    }
+
+    /**
+     * Sync companies.
+     *
+     * @param _userName the user name
+     * @param _token the token
+     * @throws EFapsException
+     */
+    private void syncCompanies(final String _userName, final IDToken _token)
+        throws EFapsException
+    {
+        if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITCOMPANYUPDATE)) {
+            final Map<String, Object> otherClaims = _token.getOtherClaims();
+            if (otherClaims.containsKey(COMPANIESKEY)) {
+                final String companiesStr = (String) otherClaims.get(COMPANIESKEY);
+                final Person person = getPerson(_userName);
+                if (person != null) {
+                    final Set<Company> companies = new HashSet<>();
+                    for (final String companyStr : StringUtils.split(companiesStr, "|")) {
+                        final Company company;
+                        if (UUIDUtil.isUUID(companyStr)) {
+                            company = Company.get(UUID.fromString(companyStr));
+                        } else {
+                            company = Company.get(companyStr);
+                        }
+                        if (company != null) {
+                            companies.add(company);
+                        }
+                    }
+                    final JAASSystem jaasSystem = JAASSystem.getJAASSystem("eFaps");
+                    person.setCompanies(jaasSystem, companies);
                 }
             }
         }
