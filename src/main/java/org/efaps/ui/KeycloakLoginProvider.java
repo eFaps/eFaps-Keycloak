@@ -19,19 +19,25 @@ package org.efaps.ui;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import javax.servlet.http.HttpSession;
 
+import org.apache.commons.lang3.StringUtils;
 import org.efaps.admin.EFapsSystemConfiguration;
 import org.efaps.admin.user.JAASSystem;
 import org.efaps.admin.user.Person;
 import org.efaps.admin.user.Person.AttrName;
 import org.efaps.admin.user.Role;
 import org.efaps.api.ui.ILoginProvider;
+import org.efaps.ci.CIAdmin;
 import org.efaps.db.Context;
+import org.efaps.db.InstanceQuery;
+import org.efaps.db.QueryBuilder;
 import org.efaps.util.EFapsException;
 import org.efaps.util.UUIDUtil;
 import org.keycloak.adapters.servlet.OIDCFilterSessionStore.SerializableKeycloakAccount;
@@ -50,11 +56,23 @@ public class KeycloakLoginProvider
     /** The rolekey. */
     public static final String ROLEKEY = "eFapsRoles";
 
-    /** The rolekey. */
+    /** The Constant LANGKEY. */
+    public static final String LANGKEY = "eFapsLanguage";
+
+    /** The Constant LOCALEKEY. */
+    public static final String LOCALEKEY = "eFapsLocale";
+
+    /** The Constant TZKEY. */
+    public static final String TZKEY = "eFapsTimeZone";
+
+    /** The Constant PERMITROLEUPDATE. */
     private static final String PERMITROLEUPDATE = "org.efaps.kernel.sso.PermitRoleUpdate";
 
-    /** The rolekey. */
+    /** The Constant PERMITATTRIBUTEUPDATE. */
     private static final String PERMITATTRIBUTEUPDATE = "org.efaps.kernel.sso.PermitAttributeUpdate";
+
+    /** The Constant PERMITCREATEPERSON. */
+    private static final String PERMITCREATEPERSON = "org.efaps.kernel.sso.PermitCreatePerson";
 
     /**
      * Logger for this class.
@@ -79,10 +97,12 @@ public class KeycloakLoginProvider
                 final String userName = account.getPrincipal().getName();
                 try {
                     final IDToken token = account.getKeycloakSecurityContext().getIdToken();
-                    syncAttributes(userName, token);
-                    syncRoles(userName, token);
-                    Person.reset(userName);
-                    ok = getPerson(userName) != null;
+                    if (validatePerson(userName, token)) {
+                        syncAttributes(userName, token);
+                        syncRoles(userName, token);
+                        Person.reset(userName);
+                        ok = getPerson(userName) != null;
+                    }
                 } finally {
                     if (ok && Context.isTMActive()) {
                         Context.commit();
@@ -101,6 +121,32 @@ public class KeycloakLoginProvider
             } catch (final EFapsException e) {
                 LOG.error("could not verify person", e);
             }
+        }
+        return ret;
+    }
+
+    /**
+     * Validate if a person exists in the eFaps-Database.
+     * If it does not exists and it is permitted via SytemConfiguration
+     * will create a basic Person. Update of Attributes etc.
+     * must be done on syncAttributes.
+     *
+     * @param _userName the user name
+     * @throws EFapsException on error
+     */
+    private boolean validatePerson(final String _userName,
+                                   final IDToken _token)
+        throws EFapsException
+    {
+        final Person person = getPerson(_userName);
+        boolean ret = false;
+        if (person != null) {
+            ret = true;
+        } else if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITCREATEPERSON)) {
+            final String userName = UUIDUtil.isUUID(_userName) ? _token.getPreferredUsername() : _userName;
+            Person.createPerson(JAASSystem.getJAASSystem("eFaps"), userName, userName,
+                            UUIDUtil.isUUID(_userName) ? _userName : null);
+            ret = true;
         }
         return ret;
     }
@@ -183,6 +229,36 @@ public class KeycloakLoginProvider
                 if (!person.getLastName().equals(_token.getFamilyName())) {
                     person.updateAttrValue(AttrName.LASTNAME, _token.getFamilyName());
                     update = true;
+                }
+                final Map<String, Object> otherClaims = _token.getOtherClaims();
+                final String localeTag = (String) otherClaims.get(LOCALEKEY);
+                if (StringUtils.isNotEmpty(localeTag)) {
+                    if (!person.getLocale().toLanguageTag().equals(localeTag)
+                                    && Locale.forLanguageTag(localeTag) != null) {
+                        person.updateAttrValue(AttrName.LOCALE, localeTag);
+                        update = true;
+                    }
+                }
+                final String tzStr = (String) otherClaims.get(TZKEY);
+                if (StringUtils.isNotEmpty(tzStr)) {
+                    final TimeZone tz = TimeZone.getTimeZone(tzStr);
+                    if (!person.getTimeZone().getID().equals(tzStr) && tz != null) {
+                        person.updateAttrValue(AttrName.TIMZONE, tzStr);
+                        update = true;
+                    }
+                }
+                final String lang = (String) otherClaims.get(LANGKEY);
+                if (StringUtils.isNotEmpty(lang)) {
+                    if (!person.getLanguage().equals(lang)) {
+                        final QueryBuilder queryBldr = new QueryBuilder(CIAdmin.Language);
+                        queryBldr.addWhereAttrEqValue(CIAdmin.Language.Language, lang);
+                        final InstanceQuery query = queryBldr.getQuery();
+                        query.executeWithoutAccessCheck();
+                        if (query.next()) {
+                            person.updateAttrValue(AttrName.LANGUAGE, String.valueOf(query.getCurrentValue().getId()));
+                            update = true;
+                        }
+                    }
                 }
                 if (update) {
                     person.commitAttrValuesInDB();
