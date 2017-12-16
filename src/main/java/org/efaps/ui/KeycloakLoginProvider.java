@@ -232,12 +232,10 @@ public class KeycloakLoginProvider
                 }
                 final Map<String, Object> otherClaims = _token.getOtherClaims();
                 final String localeTag = (String) otherClaims.get(LOCALEKEY);
-                if (StringUtils.isNotEmpty(localeTag)) {
-                    if (!person.getLocale().toLanguageTag().equals(localeTag)
+                if (StringUtils.isNotEmpty(localeTag) && !person.getLocale().toLanguageTag().equals(localeTag)
                                     && Locale.forLanguageTag(localeTag) != null) {
-                        person.updateAttrValue(AttrName.LOCALE, localeTag);
-                        update = true;
-                    }
+                    person.updateAttrValue(AttrName.LOCALE, localeTag);
+                    update = true;
                 }
                 final String tzStr = (String) otherClaims.get(TZKEY);
                 if (StringUtils.isNotEmpty(tzStr)) {
@@ -248,16 +246,14 @@ public class KeycloakLoginProvider
                     }
                 }
                 final String lang = (String) otherClaims.get(LANGKEY);
-                if (StringUtils.isNotEmpty(lang)) {
-                    if (!person.getLanguage().equals(lang)) {
-                        final QueryBuilder queryBldr = new QueryBuilder(CIAdmin.Language);
-                        queryBldr.addWhereAttrEqValue(CIAdmin.Language.Language, lang);
-                        final InstanceQuery query = queryBldr.getQuery();
-                        query.executeWithoutAccessCheck();
-                        if (query.next()) {
-                            person.updateAttrValue(AttrName.LANGUAGE, String.valueOf(query.getCurrentValue().getId()));
-                            update = true;
-                        }
+                if (StringUtils.isNotEmpty(lang) && !person.getLanguage().equals(lang)) {
+                    final QueryBuilder queryBldr = new QueryBuilder(CIAdmin.Language);
+                    queryBldr.addWhereAttrEqValue(CIAdmin.Language.Language, lang);
+                    final InstanceQuery query = queryBldr.getQuery();
+                    query.executeWithoutAccessCheck();
+                    if (query.next()) {
+                        person.updateAttrValue(AttrName.LANGUAGE, String.valueOf(query.getCurrentValue().getId()));
+                        update = true;
                     }
                 }
                 if (update) {
