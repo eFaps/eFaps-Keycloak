@@ -17,8 +17,9 @@
 
 package org.efaps.ui;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,7 @@ import java.util.UUID;
 
 import javax.servlet.http.HttpSession;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.efaps.admin.EFapsSystemConfiguration;
 import org.efaps.admin.user.Company;
@@ -106,7 +108,7 @@ public class KeycloakLoginProvider
                     final IDToken token = account.getKeycloakSecurityContext().getIdToken();
                     if (validatePerson(userName, token)) {
                         syncAttributes(userName, token);
-                        syncRoles(userName, token);
+                        syncRoles(userName, account.getRoles(), token);
                         syncCompanies(userName, token);
                         Person.reset(userName);
                         ok = getPerson(userName) != null;
@@ -146,11 +148,13 @@ public class KeycloakLoginProvider
                                    final IDToken _token)
         throws EFapsException
     {
+        LOG.trace("Steping into validatePerson");
         final Person person = getPerson(_userName);
         boolean ret = false;
         if (person != null) {
             ret = true;
         } else if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITCREATEPERSON)) {
+            LOG.debug("{} is activated", PERMITCREATEPERSON);
             final String userName = UUIDUtil.isUUID(_userName) ? _token.getPreferredUsername() : _userName;
             Person.createPerson(JAASSystem.getJAASSystem("eFaps"), userName, userName,
                             UUIDUtil.isUUID(_userName) ? _userName : null);
@@ -182,35 +186,48 @@ public class KeycloakLoginProvider
      * Sync roles.
      *
      * @param _userName the user name
+     * @param _roles set of roles
      * @param _token the token
      * @throws EFapsException the e faps exception
      */
+    @SuppressWarnings("unchecked")
     private void syncRoles(final String _userName,
+                           final Set<String> _roles,
                            final IDToken _token)
         throws EFapsException
     {
+        LOG.trace("Steping into syncRoles");
         if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITROLEUPDATE)) {
-            final Map<String, Object> otherClaims = _token.getOtherClaims();
-            if (otherClaims.containsKey(ROLEKEY)) {
-                @SuppressWarnings("unchecked")
-                final List<String> claims = (List<String>) otherClaims.get(ROLEKEY);
-                final Person person = getPerson(_userName);
-                if (person != null) {
-                    final Set<Role> roles = new HashSet<>();
-                    for (final String roleStr : claims) {
-                        final Role role;
-                        if (UUIDUtil.isUUID(roleStr)) {
-                            role = Role.get(UUID.fromString(roleStr));
-                        } else {
-                            role = Role.get(roleStr);
-                        }
-                        if (role != null) {
-                            roles.add(role);
-                        }
-                    }
-                    final JAASSystem jaasSystem = JAASSystem.getJAASSystem("eFaps");
-                    person.setRoles(jaasSystem, roles);
+            LOG.debug("{} is activated", PERMITROLEUPDATE);
+            final Collection<String> roleStrs;
+            if (CollectionUtils.isNotEmpty(_roles)) {
+                roleStrs = _roles;
+                LOG.debug("Roles via scope are assigned with: {}", ROLEKEY, roleStrs);
+            } else {
+                final Map<String, Object> otherClaims = _token.getOtherClaims();
+                if (otherClaims.containsKey(ROLEKEY)) {
+                    roleStrs = (Collection<String>) otherClaims.get(ROLEKEY);
+                    LOG.debug("{}: is is set with {}", ROLEKEY, roleStrs);
+                } else {
+                    roleStrs = Collections.emptyList();
                 }
+            }
+            final Person person = getPerson(_userName);
+            if (person != null) {
+                final Set<Role> roles = new HashSet<>();
+                for (final String roleStr : roleStrs) {
+                    final Role role;
+                    if (UUIDUtil.isUUID(roleStr)) {
+                        role = Role.get(UUID.fromString(roleStr));
+                    } else {
+                        role = Role.get(roleStr);
+                    }
+                    if (role != null) {
+                        roles.add(role);
+                    }
+                }
+                final JAASSystem jaasSystem = JAASSystem.getJAASSystem("eFaps");
+                person.setRoles(jaasSystem, roles);
             }
         }
     }
@@ -225,10 +242,13 @@ public class KeycloakLoginProvider
     private void syncCompanies(final String _userName, final IDToken _token)
         throws EFapsException
     {
+        LOG.trace("Steping into syncCompanies");
         if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITCOMPANYUPDATE)) {
+            LOG.debug("{} is activated", PERMITCOMPANYUPDATE);
             final Map<String, Object> otherClaims = _token.getOtherClaims();
             if (otherClaims.containsKey(COMPANIESKEY)) {
                 final String companiesStr = (String) otherClaims.get(COMPANIESKEY);
+                LOG.debug("{}: is is set with {}", COMPANIESKEY, companiesStr);
                 final Person person = getPerson(_userName);
                 if (person != null) {
                     final Set<Company> companies = new HashSet<>();
@@ -261,7 +281,9 @@ public class KeycloakLoginProvider
                                 final IDToken _token)
         throws EFapsException
     {
+        LOG.trace("Steping into syncAttributes");
         if (EFapsSystemConfiguration.get().getAttributeValueAsBoolean(PERMITATTRIBUTEUPDATE)) {
+            LOG.debug("{} is activated", PERMITATTRIBUTEUPDATE);
             final Person person = getPerson(_userName);
             if (person != null) {
                 boolean update = false;
@@ -275,6 +297,7 @@ public class KeycloakLoginProvider
                 }
                 final Map<String, Object> otherClaims = _token.getOtherClaims();
                 final String localeTag = (String) otherClaims.get(LOCALEKEY);
+                LOG.debug("{}: is is set with {}", LOCALEKEY, localeTag);
                 if (StringUtils.isNotEmpty(localeTag) && !person.getLocale().toLanguageTag().equals(localeTag)
                                     && Locale.forLanguageTag(localeTag) != null) {
                     person.updateAttrValue(AttrName.LOCALE, localeTag);
@@ -282,6 +305,7 @@ public class KeycloakLoginProvider
                 }
                 final String tzStr = (String) otherClaims.get(TZKEY);
                 if (StringUtils.isNotEmpty(tzStr)) {
+                    LOG.debug("{}: is is set with {}", TZKEY, tzStr);
                     final TimeZone tz = TimeZone.getTimeZone(tzStr);
                     if (!person.getTimeZone().getID().equals(tzStr) && tz != null) {
                         person.updateAttrValue(AttrName.TIMZONE, tzStr);
@@ -290,6 +314,7 @@ public class KeycloakLoginProvider
                 }
                 final String lang = (String) otherClaims.get(LANGKEY);
                 if (StringUtils.isNotEmpty(lang) && !person.getLanguage().equals(lang)) {
+                    LOG.debug("{}: is is set with {}", LANGKEY, lang);
                     final QueryBuilder queryBldr = new QueryBuilder(CIAdmin.Language);
                     queryBldr.addWhereAttrEqValue(CIAdmin.Language.Language, lang);
                     final InstanceQuery query = queryBldr.getQuery();
