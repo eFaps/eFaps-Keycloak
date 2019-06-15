@@ -34,7 +34,6 @@ import org.apache.commons.text.StringEscapeUtils;
 import org.keycloak.adapters.AuthenticatedActionsHandler;
 import org.keycloak.adapters.KeycloakDeployment;
 import org.keycloak.adapters.PreAuthActionsHandler;
-import org.keycloak.adapters.servlet.FilterRequestAuthenticator;
 import org.keycloak.adapters.servlet.KeycloakOIDCFilter;
 import org.keycloak.adapters.servlet.OIDCFilterSessionStore;
 import org.keycloak.adapters.servlet.OIDCServletHttpFacade;
