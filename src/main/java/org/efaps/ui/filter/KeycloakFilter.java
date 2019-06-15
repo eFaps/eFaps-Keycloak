@@ -1,5 +1,5 @@
 /*
- * Copyright 2003 - 2017 The eFaps Team
+ * Copyright 2003 - 2019 The eFaps Team
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * TODO comment!
  *
  * @author The eFaps Team
  */
@@ -75,7 +74,7 @@ public class KeycloakFilter
         final HttpServletResponse response = (HttpServletResponse) _res;
 
         final OIDCServletHttpFacade facade = new OIDCServletHttpFacade(request, response);
-        final KeycloakDeployment deployment = this.deploymentContext.resolveDeployment(facade);
+        final KeycloakDeployment deployment = deploymentContext.resolveDeployment(facade);
         if (deployment == null || !deployment.isConfigured()) {
             response.sendError(403);
             KeycloakFilter.LOG.error("deployment not configured");
@@ -102,15 +101,15 @@ public class KeycloakFilter
                     KeycloakFilter.this.idMapper.removeSession(id);
                 }
             }
-        }, this.deploymentContext, facade);
+        }, deploymentContext, facade);
 
         if (preActions.handleRequest()) {
             return;
         }
 
-        this.nodesRegistrationManagement.tryRegister(deployment);
+        nodesRegistrationManagement.tryRegister(deployment);
         final OIDCFilterSessionStore tokenStore = new OIDCFilterSessionStore(request, facade, 100000, deployment,
-                        this.idMapper);
+                        idMapper);
         tokenStore.checkCurrentToken();
 
         final FilterRequestAuthenticator authenticator = new FilterRequestAuthenticator(deployment, tokenStore, facade,
