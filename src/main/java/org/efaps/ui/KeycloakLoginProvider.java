@@ -17,9 +17,11 @@
 
 package org.efaps.ui;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -136,10 +138,9 @@ public class KeycloakLoginProvider
     }
 
     /**
-     * Validate if a person exists in the eFaps-Database.
-     * If it does not exists and it is permitted via SytemConfiguration
-     * will create a basic Person. Update of Attributes etc.
-     * must be done on syncAttributes.
+     * Validate if a person exists in the eFaps-Database. If it does not exists
+     * and it is permitted via SytemConfiguration will create a basic Person.
+     * Update of Attributes etc. must be done on syncAttributes.
      *
      * @param _userName the user name
      * @throws EFapsException on error
@@ -239,6 +240,7 @@ public class KeycloakLoginProvider
      * @param _token the token
      * @throws EFapsException
      */
+    @SuppressWarnings("unchecked")
     private void syncCompanies(final String _userName, final IDToken _token)
         throws EFapsException
     {
@@ -247,12 +249,20 @@ public class KeycloakLoginProvider
             LOG.debug("{} is activated", PERMITCOMPANYUPDATE);
             final Map<String, Object> otherClaims = _token.getOtherClaims();
             if (otherClaims.containsKey(COMPANIESKEY)) {
-                final String companiesStr = (String) otherClaims.get(COMPANIESKEY);
-                LOG.debug("{}: is is set with {}", COMPANIESKEY, companiesStr);
+                final Object claimObject = otherClaims.get(COMPANIESKEY);
+                List<String> companyClaims = null;
+                if (claimObject instanceof List) {
+                    companyClaims = (List<String>) otherClaims.get(COMPANIESKEY);
+                    LOG.debug("{}: is is set with {}", COMPANIESKEY, companyClaims);
+                } else {
+                    final String companiesStr = (String) otherClaims.get(COMPANIESKEY);
+                    LOG.debug("{}: is is set with {}", COMPANIESKEY, companiesStr);
+                    companyClaims = Arrays.asList(StringUtils.split(companiesStr, "|"));
+                }
                 final Person person = getPerson(_userName);
                 if (person != null) {
                     final Set<Company> companies = new HashSet<>();
-                    for (final String companyStr : StringUtils.split(companiesStr, "|")) {
+                    for (final String companyStr : companyClaims) {
                         final Company company;
                         if (UUIDUtil.isUUID(companyStr)) {
                             company = Company.get(UUID.fromString(companyStr));
@@ -299,7 +309,7 @@ public class KeycloakLoginProvider
                 final String localeTag = (String) otherClaims.get(LOCALEKEY);
                 LOG.debug("{}: is is set with {}", LOCALEKEY, localeTag);
                 if (StringUtils.isNotEmpty(localeTag) && !person.getLocale().toLanguageTag().equals(localeTag)
-                                    && Locale.forLanguageTag(localeTag) != null) {
+                                && Locale.forLanguageTag(localeTag) != null) {
                     person.updateAttrValue(AttrName.LOCALE, localeTag);
                     update = true;
                 }
