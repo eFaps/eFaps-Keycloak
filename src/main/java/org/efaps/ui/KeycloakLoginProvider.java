@@ -158,7 +158,7 @@ public class KeycloakLoginProvider
             LOG.debug("{} is activated", PERMITCREATEPERSON);
             final String userName = UUIDUtil.isUUID(_userName) ? _token.getPreferredUsername() : _userName;
             Person.createPerson(JAASSystem.getJAASSystem("eFaps"), userName, userName,
-                            UUIDUtil.isUUID(_userName) ? _userName : null);
+                            UUIDUtil.isUUID(_userName) ? _userName : null, true);
             ret = true;
         }
         return ret;
