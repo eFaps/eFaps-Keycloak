@@ -61,7 +61,7 @@
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-authz-client</artifactId>
-            <version>23.0.5</version>
+            <version>26.0.7</version>
         </dependency>
         <dependency>
             <groupId>javax.servlet</groupId>
